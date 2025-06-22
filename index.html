@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <title>โปรแกรมรายรับรายจ่าย</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body { font-family: sans-serif; padding: 20px; background: #f2f2f2; }
+    input, select, button { margin: 5px; padding: 5px; }
+    table { width: 100%; margin-top: 20px; border-collapse: collapse; background: #fff; }
+    th, td { padding: 8px; border: 1px solid #ccc; text-align: left; }
+    #summary, #graphs { margin-top: 20px; padding: 15px; background: #eef; }
+  </style>
+</head>
+<body>
+  <h1>โปรแกรมรายรับรายจ่าย</h1>
+
+  <div>
+    <input type="month" id="monthSelect" />
+    <button onclick="exportCSV()">ส่งออก CSV</button>
+    <button onclick="exportJSON()">สำรองข้อมูล (JSON)</button>
+    <input type="file" id="jsonFile" />
+    <button onclick="importJSON()">นำเข้าข้อมูล</button>
+  </div>
+
+  <div>
+    <input type="date" id="date" />
+    <input type="text" id="desc" placeholder="คำอธิบาย" />
+    <input type="number" id="amount" placeholder="จำนวนเงิน" />
+    <select id="type">
+      <option value="income">รายรับ</option>
+      <option value="expense">รายจ่าย</option>
+    </select>
+    <button onclick="addEntry()">เพิ่ม</button>
+    <button onclick="clearAll()">ล้างทั้งหมด</button>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>วันที่</th><th>คำอธิบาย</th><th>ประเภท</th><th>จำนวน</th><th>ลบ</th>
+      </tr>
+    </thead>
+    <tbody id="recordList"></tbody>
+  </table>
+
+  <div id="summary">
+    <h3>สรุปยอด</h3>
+    <p id="daily"></p>
+    <p id="monthly"></p>
+  </div>
+
+  <div id="graphs">
+    <h3>กราฟรายเดือน</h3>
+    <canvas id="barChart" height="100"></canvas>
+    <h3>สัดส่วนรายรับ-รายจ่าย</h3>
+    <canvas id="pieChart" height="100"></canvas>
+  </div>
+
+<script>
+let records = JSON.parse(localStorage.getItem("records") || "[]");
+
+document.getElementById("monthSelect").value = new Date().toISOString().slice(0, 7);
+document.getElementById("monthSelect").addEventListener("change", render);
+
+function addEntry() {
+  const date = document.getElementById("date").value;
+  const desc = document.getElementById("desc").value.trim();
+  const amount = parseFloat(document.getElementById("amount").value);
+  const type = document.getElementById("type").value;
+  if (!date || !desc || !amount || isNaN(amount)) return alert("กรุณากรอกข้อมูลให้ครบ");
+  records.push({ date, desc, amount, type });
+  localStorage.setItem("records", JSON.stringify(records));
+  render();
+}
+  function removeEntry(index) {
+  records.splice(index, 1);
+  localStorage.setItem("records", JSON.stringify(records));
+  render();
+}
+
+function clearAll() {
+  if (confirm("ลบทั้งหมดจริงหรือ?")) {
+    records = [];
+    localStorage.setItem("records", "[]");
+    render();
+  }
+}
+
+function exportCSV() {
+  const month = document.getElementById("monthSelect").value;
+  const rows = [["วันที่", "คำอธิบาย", "ประเภท", "จำนวน"]];
+  records.filter(r => r.date.startsWith(month)).forEach(r => {
+    rows.push([r.date, r.desc, r.type === "income" ? "รายรับ" : "รายจ่าย", r.amount]);
+  });
+  const csv = rows.map(e => e.join(",")).join("\n");
+  const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = `report-${month}.csv`;
+  link.click();
+}
+
+function exportJSON() {
+  const blob = new Blob([JSON.stringify(records)], { type: "application/json" });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = "data-backup.json";
+  link.click();
+}
+
+function importJSON() {
+  const file = document.getElementById("jsonFile").files[0];
+  if (!file) return alert("กรุณาเลือกไฟล์ก่อน");
+  const reader = new FileReader();
+  reader.onload = function (e) {
+    try {
+      const data = JSON.parse(e.target.result);
+      if (Array.isArray(data)) {
+        records = data;
+        localStorage.setItem("records", JSON.stringify(records));
+        render();
+      } else {
+        alert("ไฟล์ไม่ถูกต้อง");
+      }
+    } catch {
+      alert("เกิดข้อผิดพลาดขณะอ่านไฟล์");
+    }
+  };
+  reader.readAsText(file);
+}
+  function render() {
+  const month = document.getElementById("monthSelect").value;
+  const tbody = document.getElementById("recordList");
+  tbody.innerHTML = "";
+
+  let dailyBalance = 0, income = 0, expense = 0;
+  const today = new Date().toISOString().slice(0, 10);
+
+  records.forEach((r, i) => {
+    if (r.date.startsWith(month)) {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `<td>${r.date}</td><td>${r.desc}</td><td>${r.type === "income" ? "รายรับ" : "รายจ่าย"}</td><td>${r.amount.toLocaleString()}</td><td><button onclick="removeEntry(${i})">ลบ</button></td>`;
+      tbody.appendChild(tr);
+      if (r.type === "income") income += r.amount;
+      else expense += r.amount;
+      if (r.date === today) dailyBalance += r.type === "income" ? r.amount : -r.amount;
+    }
+  });
+
+  document.getElementById("daily").innerText = `ยอดวันนี้ (${today}): ${dailyBalance.toLocaleString()} บาท`;
+  document.getElementById("monthly").innerText = `เดือน ${month}: รายรับ ${income.toLocaleString()} | รายจ่าย ${expense.toLocaleString()} | คงเหลือ ${(income - expense).toLocaleString()} บาท`;
+
+  renderCharts(month, income, expense);
+}
+
+function renderCharts(month, income, expense) {
+  if (window.barChart) window.barChart.destroy();
+  if (window.pieChart) window.pieChart.destroy();
+
+  const ctx1 = document.getElementById("barChart").getContext("2d");
+  window.barChart = new Chart(ctx1, {
+    type: "bar",
+    data: {
+      labels: ["รายรับ", "รายจ่าย", "คงเหลือ"],
+      datasets: [{
+        label: `เดือน ${month}`,
+        data: [income, expense, income - expense],
+        backgroundColor: ["#4caf50", "#f44336", "#2196f3"]
+      }]
+    },
+    options: { responsive: true }
+  });
+
+  const ctx2 = document.getElementById("pieChart").getContext("2d");
+  window.pieChart = new Chart(ctx2, {
+    type: "pie",
+    data: {
+      labels: ["รายรับ", "รายจ่าย"],
+      datasets: [{
+        data: [income, expense],
+        backgroundColor: ["#4caf50", "#f44336"]
+      }]
+    }
+  });
+}
+
+render();
+</script>
+</body>
+</html>

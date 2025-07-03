@@ -150,6 +150,7 @@ function importJSON() {
   document.getElementById("daily").innerText = `ยอดวันนี้ (${today}): ${dailyBalance.toLocaleString()} บาท`;
   document.getElementById("monthly").innerText = `เดือน ${month}: รายรับ ${income.toLocaleString()} | รายจ่าย ${expense.toLocaleString()} | คงเหลือ ${(income - expense).toLocaleString()} บาท`;
 
+  // แก้ไขตรงนี้: เรียกใช้ renderCharts พร้อมส่งค่า income และ expense
   renderCharts(month, income, expense);
 }
 

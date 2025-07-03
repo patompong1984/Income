@@ -16,7 +16,7 @@
   <h1>โปรแกรมรายรับรายจ่าย</h1>
 
   <div>
-    <input type="month" id="monthSelect" />
+    <select id="monthSelect" multiple size="5" style="width: 200px;"></select>
     <button onclick="exportCSV()">ส่งออก CSV</button>
     <button onclick="exportJSON()">สำรองข้อมูล (JSON)</button>
     <input type="file" id="jsonFile" />
@@ -34,6 +34,7 @@
     <button onclick="addEntry()">เพิ่ม</button>
     <button onclick="clearAll()">ล้างทั้งหมด</button>
   </div>
+
   <table>
     <thead>
       <tr>
@@ -59,7 +60,18 @@
 <script>
 let records = JSON.parse(localStorage.getItem("records") || "[]");
 
-document.getElementById("monthSelect").value = new Date().toISOString().slice(0, 7);
+function populateMonthOptions() {
+  const select = document.getElementById("monthSelect");
+  const months = [...new Set(records.map(r => r.date.slice(0, 7)))].sort();
+  select.innerHTML = "";
+  months.forEach(m => {
+    const opt = document.createElement("option");
+    opt.value = m;
+    opt.textContent = m;
+    select.appendChild(opt);
+  });
+}
+
 document.getElementById("monthSelect").addEventListener("change", render);
 
 function addEntry() {
@@ -72,7 +84,8 @@ function addEntry() {
   localStorage.setItem("records", JSON.stringify(records));
   render();
 }
-  function removeEntry(index) {
+
+function removeEntry(index) {
   records.splice(index, 1);
   localStorage.setItem("records", JSON.stringify(records));
   render();
@@ -87,16 +100,16 @@ function clearAll() {
 }
 
 function exportCSV() {
-  const month = document.getElementById("monthSelect").value;
+  const selected = Array.from(document.getElementById("monthSelect").selectedOptions).map(o => o.value);
   const rows = [["วันที่", "คำอธิบาย", "ประเภท", "จำนวน"]];
-  records.filter(r => r.date.startsWith(month)).forEach(r => {
+  records.filter(r => selected.includes(r.date.slice(0, 7))).forEach(r => {
     rows.push([r.date, r.desc, r.type === "income" ? "รายรับ" : "รายจ่าย", r.amount]);
   });
   const csv = rows.map(e => e.join(",")).join("\n");
   const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
   const link = document.createElement("a");
   link.href = URL.createObjectURL(blob);
-  link.download = `report-${month}.csv`;
+  link.download = `report.csv`;
   link.click();
 }
 
@@ -128,73 +141,86 @@ function importJSON() {
   };
   reader.readAsText(file);
 }
-  function render() {
-  const month = document.getElementById("monthSelect").value;
+
+function render() {
+  populateMonthOptions();
+  const selected = Array.from(document.getElementById("monthSelect").selectedOptions).map(o => o.value);
   const tbody = document.getElementById("recordList");
   tbody.innerHTML = "";
 
-  let dailyBalance = 0, income = 0, expense = 0;
+  let dailyBalance = 0, totalIncome = 0, totalExpense = 0;
   const today = new Date().toISOString().slice(0, 10);
+  const monthlyData = {};
 
   records.forEach((r, i) => {
-    if (r.date.startsWith(month)) {
+    if (selected.includes(r.date.slice(0, 7))) {
       const tr = document.createElement("tr");
       tr.innerHTML = `<td>${r.date}</td><td>${r.desc}</td><td>${r.type === "income" ? "รายรับ" : "รายจ่าย"}</td><td>${r.amount.toLocaleString()}</td><td><button onclick="removeEntry(${i})">ลบ</button></td>`;
       tbody.appendChild(tr);
-      if (r.type === "income") income += r.amount;
-      else expense += r.amount;
+
+      const month = r.date.slice(0, 7);
+      if (!monthlyData[month]) monthlyData[month] = { income: 0, expense: 0 };
+      if (r.type === "income") {
+        monthlyData[month].income += r.amount;
+        totalIncome += r.amount;
+      } else {
+        monthlyData[month].expense += r.amount;
+        totalExpense += r.amount;
+      }
+
       if (r.date === today) dailyBalance += r.type === "income" ? r.amount : -r.amount;
     }
   });
 
   document.getElementById("daily").innerText = `ยอดวันนี้ (${today}): ${dailyBalance.toLocaleString()} บาท`;
-  document.getElementById("monthly").innerText = `เดือน ${month}: รายรับ ${income.toLocaleString()} | รายจ่าย ${expense.toLocaleString()} | คงเหลือ ${(income - expense).toLocaleString()} บาท`;
+  document.getElementById("monthly").innerText = `รวมทั้งหมด: รายรับ ${totalIncome.toLocaleString()} | รายจ่าย ${totalExpense.toLocaleString()} | คงเหลือ ${(totalIncome - totalExpense).toLocaleString()} บาท`;
 
-  renderCharts(month, income, expense);
+  renderCharts(monthlyData);
 }
 
-function renderCharts(month, income, expense) {
-  // ตรวจสอบว่า canvas element พร้อมใช้งานหรือไม่
-  const barChartCanvas = document.getElementById("barChart");
-  const pieChartCanvas = document.getElementById("pieChart");
-
-  if (!barChartCanvas || !pieChartCanvas) {
-    console.error("Canvas elements not found. Charts cannot be rendered.");
-    return; // หยุดการทำงานถ้าไม่พบ canvas
-  }
-
+function renderCharts(monthlyData) {
   if (window.barChart) window.barChart.destroy();
   if (window.pieChart) window.pieChart.destroy();
 
-  const ctx1 = barChartCanvas.getContext("2d");
+  const labels = Object.keys(monthlyData);
+  const incomeData = labels.map(m => monthlyData[m].income);
+  const expenseData = labels.map(m => monthlyData[m].expense);
+  const balanceData = labels.map(m => monthlyData[m].income - monthlyData[m].expense);
+
+  const ctx1 = document.getElementById("barChart").getContext("2d");
   window.barChart = new Chart(ctx1, {
     type: "bar",
     data: {
-      labels: ["รายรับ", "รายจ่าย", "คงเหลือ"],
-      datasets: [{
-        label: `เดือน ${month}`,
-        data: [income, expense, income - expense],
-        backgroundColor: ["#4caf50", "#f44336", "#2196f3"]
-      }]
+      labels,
+      datasets: [
+        { label: "รายรับ", data: incomeData, backgroundColor: "#4caf50" },
+        { label: "รายจ่าย", data: expenseData, backgroundColor: "#f44336" },
+        { label: "คงเหลือ", data: balanceData, backgroundColor: "#2196f3" }
+      ]
     },
     options: { responsive: true }
   });
 
-  const ctx2 = pieChartCanvas.getContext("2d");
+  const ctx2 = document.getElementById("pieChart").getContext("2d");
   window.pieChart = new Chart(ctx2, {
     type: "pie",
     data: {
-      labels: ["รายรับ", "รายจ่าย"],
+      labels: ["รายรับรวม", "รายจ่ายรวม"],
       datasets: [{
-        data: [income, expense],
+        data: [
+          incomeData.reduce((a, b) => a + b, 0),
+          expenseData.reduce((a, b) => a + b, 0)
+        ],
         backgroundColor: ["#4caf50", "#f44336"]
       }]
+    },
+    options: {
+      responsive: true
     }
   });
 }
 
-// เรียกใช้ render() เมื่อ DOM โหลดเสร็จสมบูรณ์
-document.addEventListener("DOMContentLoaded", render);
+render();
 </script>
 </body>
 </html>

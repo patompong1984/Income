@@ -150,15 +150,23 @@ function importJSON() {
   document.getElementById("daily").innerText = `ยอดวันนี้ (${today}): ${dailyBalance.toLocaleString()} บาท`;
   document.getElementById("monthly").innerText = `เดือน ${month}: รายรับ ${income.toLocaleString()} | รายจ่าย ${expense.toLocaleString()} | คงเหลือ ${(income - expense).toLocaleString()} บาท`;
 
-  // แก้ไขตรงนี้: เรียกใช้ renderCharts พร้อมส่งค่า income และ expense
   renderCharts(month, income, expense);
 }
 
 function renderCharts(month, income, expense) {
+  // ตรวจสอบว่า canvas element พร้อมใช้งานหรือไม่
+  const barChartCanvas = document.getElementById("barChart");
+  const pieChartCanvas = document.getElementById("pieChart");
+
+  if (!barChartCanvas || !pieChartCanvas) {
+    console.error("Canvas elements not found. Charts cannot be rendered.");
+    return; // หยุดการทำงานถ้าไม่พบ canvas
+  }
+
   if (window.barChart) window.barChart.destroy();
   if (window.pieChart) window.pieChart.destroy();
 
-  const ctx1 = document.getElementById("barChart").getContext("2d");
+  const ctx1 = barChartCanvas.getContext("2d");
   window.barChart = new Chart(ctx1, {
     type: "bar",
     data: {
@@ -172,7 +180,7 @@ function renderCharts(month, income, expense) {
     options: { responsive: true }
   });
 
-  const ctx2 = document.getElementById("pieChart").getContext("2d");
+  const ctx2 = pieChartCanvas.getContext("2d");
   window.pieChart = new Chart(ctx2, {
     type: "pie",
     data: {
@@ -185,7 +193,8 @@ function renderCharts(month, income, expense) {
   });
 }
 
-render();
+// เรียกใช้ render() เมื่อ DOM โหลดเสร็จสมบูรณ์
+document.addEventListener("DOMContentLoaded", render);
 </script>
 </body>
 </html>
